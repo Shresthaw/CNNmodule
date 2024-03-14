@@ -1,0 +1,112 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+import os
+import torch.nn.functional as F
+from PIL import Image
+import cv2
+import time
+import csv
+from datetime import datetime
+from tkinter import *
+from tkinter import font
+from tkinter import filedialog
+import tkinter as tk
+from tkinter import messagebox
+import tkinter.simpledialog as sd
+from ttkthemes import ThemedStyle
+from PIL import Image, ImageTk
+
+
+
+# Step 1: Dataset Preparation
+dataset_path = 'C:\\Users\\user\\Desktop\\onlycnn\\images'
+  # Step 2: Data Preprocessing
+transform = transforms.Compose([
+    transforms.Resize((64, 64)),
+    transforms.ToTensor(),
+])
+dataset = datasets.ImageFolder(root=dataset_path, transform=transform)
+
+  # Split dataset into training and validation sets
+val_size = int(0.2 * len(dataset))
+train_size = len(dataset) - val_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+# Step 3: Model Definition
+class SimpleCNN(nn.Module):
+    def __init__(self, num_classes):
+        super(SimpleCNN, self).__init__()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.fc1 = nn.Linear(32 * 16 * 16, 128)  # Adjust the input size based on your image dimensions
+        self.relu3 = nn.ReLU()
+        
+        self.fc2 = nn.Linear(128, num_classes)
+
+    def forward(self, x):
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        
+        x = x.view(-1, 32 * 16 * 16)  # Adjust the size based on your image dimensions
+        x = self.relu3(self.fc1(x))
+        
+        x = self.fc2(x)
+        return x
+
+  # Step 4: Model Initialization
+num_classes = len(dataset.classes)
+cnn_model = SimpleCNN(num_classes=num_classes)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(cnn_model.parameters(), lr=0.001)
+
+# Step 5: Training Loop
+num_epochs = 50
+batch_size = 32
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+for epoch in range(num_epochs):
+    cnn_model.train()
+    for inputs, labels in train_loader:
+        optimizer.zero_grad()
+        outputs = cnn_model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+    # Validation loop
+    cnn_model.eval()
+    val_loss = 0.0
+    correct_predictions = 0
+    total_samples = 0
+
+    with torch.no_grad():
+        for val_inputs, val_labels in DataLoader(val_dataset, batch_size=batch_size, shuffle=False):
+            val_outputs = cnn_model(val_inputs)
+            val_loss += criterion(val_outputs, val_labels).item()
+
+            _, predicted = torch.max(val_outputs, 1)
+            correct_predictions += (predicted == val_labels).sum().item()
+            total_samples += val_labels.size(0)
+
+    avg_val_loss = val_loss / len(val_dataset)
+    accuracy = correct_predictions / total_samples
+   print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {loss.item():.4f}, Validation Loss: {avg_val_loss:.4f}, Accuracy: {accuracy * 100:.2f}%')
+
+# Step 6: Save the Model
+model_save_path = f'cnn_model_{datetime.now().strftime("%Y%m%d%H%M%S")}.pth'
+
+
+try:
+    torch.save(cnn_model.state_dict(), model_save_path)
+    print(f"Model saved successfully at: {model_save_path}")
+except Exception as e:
+    print(f"Error saving the model: {e}")
